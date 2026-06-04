@@ -1,4 +1,4 @@
-# install_dev_tools.sh
+# MacOS Dev Tools Installer
 
 Installs development tools locally on macOS or builds a Docker container with a subset of tools.
 
