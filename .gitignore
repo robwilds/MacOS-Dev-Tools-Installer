@@ -1,0 +1,22 @@
+# Docker volume mounts
+/projects/
+/ollama_models/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor/IDE
+*.swp
+*.swo
+*~
+
+# Build artifacts
+*.tar.gz
+*.pkg
+*.log
+__pycache__/
+*.pyc
+
+# Stale file
+install_dev_tools copy.sh
