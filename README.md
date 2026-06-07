@@ -144,6 +144,32 @@ If a newer version is available, you'll be prompted to upgrade.
 
 The following tools are **local-only** (not in the Docker image): Ollama, OpenCode, Claude Code.
 
+## Ollama Model Download (Local Only)
+
+When installing Ollama fresh (not upgrading), the installer prompts to download a small model (<14B parameters) in the background:
+
+```bash
+./install_dev_tools.sh "4"
+# After Ollama installs:
+# Download a small model (<14B) now? (y/n) [y]:
+# Popular small models (<14B):
+#   1. llama3.2:1b
+#   2. llama3.2:3b
+#   3. qwen2.5:3b
+#   ...
+#   0. Custom model name
+```
+
+The pull runs in the background with progress logged to `/tmp/ollama_pull_<model>.log`. Monitor with:
+```bash
+tail -f /tmp/ollama_pull_llama3.2_1b.log
+# Or check status:
+ollama list
+ollama ps
+```
+
+This only prompts on **fresh install** — not on upgrades or if already installed.
+
 ## Prerequisites
 
 ### Local Installation

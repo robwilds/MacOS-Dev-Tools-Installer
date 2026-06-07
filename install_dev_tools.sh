@@ -254,6 +254,56 @@ fetch_latest_aws_cli_version() {
     fi
 }
 
+prompt_ollama_small_model() {
+    echo ""
+    read -p "Download a small model (<14B) now? (y/n) [y]: " choice
+    choice=${choice:-y}
+    [[ ! "$choice" =~ ^[Yy]$ ]] && return
+
+    local models=(
+        "llama3.2:1b"
+        "llama3.2:3b"
+        "qwen2.5:3b"
+        "phi3:3.8b"
+        "gemma2:2b"
+        "qwen2.5:7b"
+        "mistral:7b"
+        "phi3:7b"
+        "gemma2:9b"
+        "codellama:7b"
+        "deepseek-coder:6.7b"
+    )
+
+    echo "Popular small models (<14B):"
+    for i in "${!models[@]}"; do
+        echo "  $((i+1)). ${models[i]}"
+    done
+    echo "  0. Custom model name"
+
+    read -p "Select [1]: " selection
+    selection=${selection:-1}
+
+    local model=""
+    if [[ "$selection" == "0" ]]; then
+        read -p "Enter model name (e.g., llama3.2:1b): " model
+    elif [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "${#models[@]}" ]; then
+        model="${models[$((selection-1))]}"
+    else
+        model="${models[0]}"
+    fi
+
+    if [ -n "$model" ]; then
+        echo "Starting background pull for $model..."
+        local log_file="/tmp/ollama_pull_${model//:/_}.log"
+        ollama pull "$model" > "$log_file" 2>&1 &
+        local pid=$!
+        echo "Pulling $model in background (PID: $pid)"
+        echo "Log: $log_file"
+        echo "Check progress with: tail -f $log_file"
+        echo "Or check status with: ollama ps / ollama list"
+    fi
+}
+
 fetch_node_version_choices() {
     local majors
     majors=$(curl -s https://nodejs.org/dist/ 2>/dev/null | sed -n 's/.*href="latest-v\([0-9]*\)\.x\/".*/\1/p' | sort -rn | head -3)
@@ -717,21 +767,21 @@ show_menu() {
     echo ""
     echo "Select tools to install (comma-separated numbers):"
     echo ""
-    echo "   1. Python 3.14.5"
-    echo "   2. Java 17 (Oracle JDK)"
-    echo "   3. Maven 3.9.16"
-    echo "   4. Ollama"
-    echo "   5. OpenCode"
-    echo "   6. nvm (Node Version Manager)"
-    echo "   7. Node.js 26.1.0"
-    echo "   8. Claude Code"
-    echo "   9. Angular CLI"
-    echo "   10. AWS CLI v2"
-    echo "   11. Build and run Docker container"
+    echo "   1.   Python 3.14.5"
+    echo "   2.   Java 17 (Oracle JDK)"
+    echo "   3.   Maven 3.9.16"
+    echo "   4.   Ollama"
+    echo "   5.   OpenCode"
+    echo "   6.   nvm (Node Version Manager)"
+    echo "   7.   Node.js 26.1.0"
+    echo "   8.   Claude Code"
+    echo "   9.   Angular CLI"
+    echo "   10.  AWS CLI v2"
+    echo "   11.  Build and run Docker container"
     echo ""
-    echo "   0. Install all tools"
+    echo "   0.   Install all tools"
     echo ""
-    echo "   q. Quit"
+    echo "   q.   Quit"
     echo ""
 }
 
@@ -860,6 +910,10 @@ if [ "$INSTALL_OLLAMA" = true ]; then
         fi
         curl -fsSL https://ollama.com/install.sh | sh
         source ~/.nvm/nvm.sh 2>/dev/null || true
+        # Prompt for model download only on fresh install
+        if [ -z "$OLLAMA_INSTALLED" ]; then
+            prompt_ollama_small_model
+        fi
     else
         echo -e "${YELLOW}Ollama already at latest version ($OLLAMA_INSTALLED), skipping...${NC}"
     fi
