@@ -864,10 +864,6 @@ else
     NODE_URL="https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}.pkg"
 fi
 
-JAVA_VERSION="17.0.12"
-JAVA_URL="https://download.oracle.com/java/17/archive/jdk-${JAVA_VERSION}_macos-${JAVA_ARCH}_bin.tar.gz"
-echo "Java URL: $JAVA_URL"
-
 # Create a temporary folder for downloads
 TMP_DIR=$(mktemp -d)
 cd $TMP_DIR
@@ -890,6 +886,8 @@ fi
 
 # 2. INSTALL JAVA (Oracle JDK)
 if [ "$INSTALL_JAVA" = true ]; then
+    JAVA_VERSION="17.0.12"
+    JAVA_URL="https://download.oracle.com/java/17/archive/jdk-${JAVA_VERSION}_macos-${JAVA_ARCH}_bin.tar.gz"
     JAVA_INSTALLED=$(check_java_version)
     JAVA_LATEST=$(fetch_latest_java_version)
     if should_upgrade "Java" "$JAVA_INSTALLED" "$JAVA_LATEST"; then
