@@ -161,6 +161,19 @@ check_nvm_version() {
     return 1
 }
 
+check_mlx_llm_version() {
+    if python3 -c "import mlx_lm" 2>/dev/null; then
+        local version
+        version=$(pip3 show mlx-lm 2>/dev/null | sed -n 's/Version: \([0-9]*\.[0-9]*\.[0-9]*\)/\1/p')
+        if [ -n "$version" ]; then
+            echo "$version"
+            return 0
+        fi
+    fi
+    echo ""
+    return 1
+}
+
 # --- Fetch Latest Version Functions ---
 fetch_latest_python_version() {
     local version
@@ -250,7 +263,18 @@ fetch_latest_aws_cli_version() {
     if [ -n "$version" ]; then
         echo "$version"
     else
-        echo "2.22.35"   # fallback
+        echo "2.19.40"  # fallback
+    fi
+}
+
+fetch_latest_mlx_llm_version() {
+    # MLX-LM is on PyPI, fetch latest version
+    local version
+    version=$(pip3 index versions mlx-lm 2>/dev/null | sed -n 's/.*\([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p' | head -1)
+    if [ -n "$version" ]; then
+        echo "$version"
+    else
+        echo "0.0.1"  # fallback
     fi
 }
 
@@ -439,6 +463,9 @@ verify_all_versions() {
     if [ "$INSTALL_ANGULAR" = true ]; then
         verify_tool_version "Angular CLI" "ng version"
     fi
+    if [ "$INSTALL_MLX_LLM" = true ]; then
+        verify_tool_version "MLX-LM" "python3 -c \"import mlx_lm; print('mlx-lm installed')\""
+    fi
     
     echo -e "${BLUE}------------------------------------------------------------${NC}"
 }
@@ -454,6 +481,7 @@ INSTALL_CLAUDE=false
 INSTALL_ANGULAR=false
 INSTALL_NVM=false
 INSTALL_AWS_CLI=false
+INSTALL_MLX_LLM=false
 
 # Default Node.js version (used when non-interactive or when fetch fails)
 DEFAULT_NODE_VERSION="26.1.0"
@@ -739,25 +767,31 @@ parse_selection() {
         INSTALL_ANGULAR=true
         INSTALL_NVM=true
         INSTALL_AWS_CLI=true
+        INSTALL_MLX_LLM=true
         return
     fi
 
     IFS=',' read -ra numbers <<< "$selection"
     for num in "${numbers[@]}"; do
-         case "${num// /}" in
-              1) INSTALL_PYTHON=true ;;
-              2) INSTALL_JAVA=true ;;
-              3) INSTALL_MAVEN=true ;;
-              4) INSTALL_OLLAMA=true ;;
-              5) INSTALL_OPENCODE=true ;;
-              6) INSTALL_NVM=true ;;
-              7) INSTALL_NODE=true ;;
-              8) INSTALL_CLAUDE=true ;;
+          case "${num// /}" in
+               1) INSTALL_PYTHON=true ;;
+               2) INSTALL_JAVA=true ;;
+               3) INSTALL_MAVEN=true ;;
+               4) INSTALL_OLLAMA=true ;;
+               5) INSTALL_OPENCODE=true ;;
+               6) INSTALL_NVM=true ;;
+               7) INSTALL_NODE=true ;;
+               8) INSTALL_CLAUDE=true ;;
                9) INSTALL_ANGULAR=true ;;
-            10) INSTALL_AWS_CLI=true ;;
-             11) build_and_run_docker; exit 0 ;;
-        esac
+             10) INSTALL_AWS_CLI=true ;;
+             11) INSTALL_MLX_LLM=true ;;
+          esac
     done
+
+    # Handle letter options
+    case "$selection" in
+        d) build_and_run_docker; exit 0 ;;
+    esac
 }
 
 show_menu() {
@@ -777,7 +811,9 @@ show_menu() {
     echo "   8.   Claude Code"
     echo "   9.   Angular CLI"
     echo "   10.  AWS CLI v2"
-    echo "   11.  Build and run Docker container"
+    echo "   11.  MLX-LM"
+    echo ""
+    echo "   d.   Build and run Docker container"
     echo ""
     echo "   0.   Install all tools"
     echo ""
@@ -1012,6 +1048,21 @@ if [ "$INSTALL_AWS_CLI" = true ]; then
     fi
 fi
 
+# 11. INSTALL MLX-LM (via pip)
+if [ "$INSTALL_MLX_LLM" = true ]; then
+    MLX_LLM_INSTALLED=$(check_mlx_llm_version)
+    MLX_LLM_LATEST=$(fetch_latest_mlx_llm_version)
+    if should_upgrade "MLX-LM" "$MLX_LLM_INSTALLED" "$MLX_LLM_LATEST"; then
+        echo -e "${GREEN}Installing MLX-LM via pip...${NC}"
+        if [ -n "$MLX_LLM_INSTALLED" ]; then
+            echo -e "${YELLOW}Current version: $MLX_LLM_INSTALLED${NC}"
+        fi
+        PIP_CMD=$(command -v pip3 || command -v pip) && $PIP_CMD install mlx-lm
+    else
+        echo -e "${YELLOW}MLX-LM already at latest version ($MLX_LLM_INSTALLED), skipping...${NC}"
+    fi
+fi
+
 # --- PATH CONFIGURATION ---
 echo -e "${BLUE}Configuring ZSH path...${NC}"
 # Use the dynamic JDK folder name for the JAVA_HOME export (only if Java was installed)
@@ -1035,6 +1086,13 @@ grep -q "# dev_tools_config" ~/.zshrc || {
     fi
     echo 'export MAVEN_HOME="/opt/maven/maven"' >> ~/.zshrc
     echo 'export PATH="$PATH:$JAVA_HOME/bin:$MAVEN_HOME/bin:/usr/local/bin"' >> ~/.zshrc
+}
+
+# Add mlx_lm shell function (idempotent)
+grep -q "mlx_lm()" ~/.zshrc || {
+    echo "" >> ~/.zshrc
+    echo "# mlx_lm alias" >> ~/.zshrc
+    echo 'mlx_lm() { python3 -m mlx_lm "$@"; }' >> ~/.zshrc
 }
 
 # Final Cleanup

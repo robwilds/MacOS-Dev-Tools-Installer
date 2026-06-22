@@ -76,7 +76,7 @@ docker-compose up -d
 docker exec -it dev-tools bash
 ```
 
-**Docker image includes:** Python 3.14.5, Java 17, Maven 3.9.16, Node.js, nvm, Angular CLI, AWS CLI
+**Docker image includes:** Python 3.14.5, Java 17, Maven 3.9.16, Node.js, nvm, Angular CLI, AWS CLI, MLX-LM
 
 ## Menu Options
 
@@ -90,8 +90,9 @@ docker exec -it dev-tools bash
 - **8** - Claude Code
 - **9** - Angular CLI
 - **10** - AWS CLI v2
-- **11** - Build and run Docker container (Python, Java, Maven, Node.js, AWS CLI)
+- **11** - MLX-LM
 - **0** - Install all tools
+- **d** - Build and run Docker container (Python, Java, Maven, Node.js, AWS CLI, MLX-LM)
 - **q** - Quit
 
 ## After Installation (Local)
@@ -110,6 +111,7 @@ claude --version
 nvm --version
 aws --version
 ng version
+mlx_lm server  # requires Python: python3 -m mlx_lm server
 ```
 
 **After installation completes**, the script automatically sources `.zshrc` and verifies all installed tools, displaying their actual versions in a formatted output.
@@ -127,6 +129,7 @@ The installer automatically checks if newer versions are available for each tool
 - **Angular CLI**: Checks npm registry via `npm view @angular/cli version`
 - **AWS CLI**: Checks latest GitHub release from aws/aws-cli
 - **nvm**: Checks latest GitHub release from nvm-sh/nvm
+- **MLX-LM**: Checks PyPI via `pip3 index versions mlx-lm`
 
 If a newer version is available, you'll be prompted to upgrade.
 
@@ -141,6 +144,7 @@ If a newer version is available, you'll be prompted to upgrade.
 | nvm          | 0.40.4  | Install script    |
 | Angular CLI  | Latest  | npm install       |
 | AWS CLI      | Latest  | Official installer|
+| MLX-LM       | Latest  | pip3 install      |
 
 The following tools are **local-only** (not in the Docker image): Ollama, OpenCode, Claude Code.
 
