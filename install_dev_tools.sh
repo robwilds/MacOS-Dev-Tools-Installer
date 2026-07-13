@@ -482,6 +482,9 @@ INSTALL_ANGULAR=false
 INSTALL_NVM=false
 INSTALL_AWS_CLI=false
 INSTALL_MLX_LLM=false
+INSTALL_DOCKER_DMG=false
+INSTALL_DOCKER_DMG=false
+INSTALL_DOCKER_DMG=false
 
 # Default Node.js version (used when non-interactive or when fetch fails)
 DEFAULT_NODE_VERSION="26.1.0"
@@ -768,23 +771,25 @@ parse_selection() {
         INSTALL_NVM=true
         INSTALL_AWS_CLI=true
         INSTALL_MLX_LLM=true
+        INSTALL_DOCKER_DMG=true
         return
     fi
 
     IFS=',' read -ra numbers <<< "$selection"
     for num in "${numbers[@]}"; do
           case "${num// /}" in
-               1) INSTALL_PYTHON=true ;;
-               2) INSTALL_JAVA=true ;;
-               3) INSTALL_MAVEN=true ;;
-               4) INSTALL_OLLAMA=true ;;
-               5) INSTALL_OPENCODE=true ;;
-               6) INSTALL_NVM=true ;;
-               7) INSTALL_NODE=true ;;
-               8) INSTALL_CLAUDE=true ;;
-               9) INSTALL_ANGULAR=true ;;
-             10) INSTALL_AWS_CLI=true ;;
-             11) INSTALL_MLX_LLM=true ;;
+                1) INSTALL_DOCKER_DMG=true ;;
+                2) INSTALL_PYTHON=true ;;
+                3) INSTALL_JAVA=true ;;
+                4) INSTALL_MAVEN=true ;;
+                5) INSTALL_OLLAMA=true ;;
+                6) INSTALL_OPENCODE=true ;;
+                7) INSTALL_NVM=true ;;
+                8) INSTALL_NODE=true ;;
+                9) INSTALL_CLAUDE=true ;;
+               10) INSTALL_ANGULAR=true ;;
+               11) INSTALL_AWS_CLI=true ;;
+               12) INSTALL_MLX_LLM=true ;;
           esac
     done
 
@@ -801,15 +806,15 @@ show_menu() {
     echo ""
     echo "Select tools to install (comma-separated numbers):"
     echo ""
-    echo "   1.   Python 3.14.5"
-    echo "   2.   Java 17 (Oracle JDK)"
-    echo "   3.   Maven 3.9.16"
-    echo "   4.   Ollama"
-    echo "   5.   OpenCode"
-    echo "   6.   nvm (Node Version Manager)"
-    echo "   7.   Node.js 26.1.0"
-    echo "   8.   Claude Code"
-    echo "   9.   Angular CLI"
+    echo "   1.   Install Docker for Apple Silicon/Mac Intel"
+    echo "   2.   Python 3.14.5"
+    echo "   3.   Java 17 (Oracle JDK)"
+    echo "   4.   Maven 3.9.16"
+    echo "   5.   Ollama"
+    echo "   6.   OpenCode"
+    echo "   7.   nvm (Node Version Manager)"
+    echo "   8.   Node.js $NODE_VERSION"
+    echo "   9.   Claude Code"
     echo "   10.  AWS CLI v2"
     echo "   11.  MLX-LM"
     echo ""
@@ -867,6 +872,29 @@ fi
 # Create a temporary folder for downloads
 TMP_DIR=$(mktemp -d)
 cd $TMP_DIR
+
+# 1. INSTALL DOCKER DMG
+if [ "$INSTALL_DOCKER_DMG" = true ]; then
+    echo -e "${GREEN}Downloading Docker DMG...${NC}"
+    # Determine architecture and download the appropriate DMG
+    if [ "$(uname -m)" = "arm64" ]; then
+        DOCKER_URL="https://desktop.docker.com/mac/main/arm64/Docker.dmg"
+    else
+        DOCKER_URL="https://desktop.docker.com/mac/main/amd64/Docker.dmg"
+    fi
+    
+    # Determine download location: ~/Downloads if exists, otherwise ~/Desktop
+    DOWNLOAD_DIR="$HOME/Downloads"
+    if [ ! -d "$DOWNLOAD_DIR" ]; then
+        DOWNLOAD_DIR="$HOME/Desktop"
+    fi
+    
+    # Download to the determined location
+    curl -L -o "$DOWNLOAD_DIR/Docker.dmg" "$DOCKER_URL"
+    echo -e "${GREEN}Download complete. The Docker DMG is located at:${NC}"
+    echo -e "${BLUE}$DOWNLOAD_DIR/Docker.dmg${NC}"
+    echo -e "${GREEN}Please open this file to install Docker.${NC}"
+fi
 
 # 1. INSTALL PYTHON (Official PKG)
 if [ "$INSTALL_PYTHON" = true ]; then
@@ -1059,6 +1087,20 @@ if [ "$INSTALL_MLX_LLM" = true ]; then
     else
         echo -e "${YELLOW}MLX-LM already at latest version ($MLX_LLM_INSTALLED), skipping...${NC}"
     fi
+fi
+
+# 12. INSTALL DOCKER DMG (if selected)
+if [ "$INSTALL_DOCKER_DMG" = true ]; then
+    echo -e "${GREEN}Downloading Docker Desktop for Mac...${NC}"
+    # Determine the URL based on architecture
+    if [ "$(uname -m)" = "arm64" ]; then
+        DOCKER_URL="https://desktop.docker.com/mac/main/arm64/Docker.dmg"
+    else
+        DOCKER_URL="https://desktop.docker.com/mac/main/amd64/Docker.dmg"
+    fi
+    curl -L -o "$TMP_DIR/Docker.dmg" "$DOCKER_URL"
+    echo -e "${GREEN}Docker.dmg downloaded to $TMP_DIR/Docker.dmg${NC}"
+    echo -e "${YELLOW}Please open the DMG file and drag Docker to your Applications folder to install.${NC}"
 fi
 
 # --- PATH CONFIGURATION ---

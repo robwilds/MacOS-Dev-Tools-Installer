@@ -10,7 +10,7 @@ Single bash script (`install_dev_tools.sh`) installs dev tools locally on macOS 
 | Install specific tools | `./install_dev_tools.sh "1,3,5"` |
 | Install all tools | `./install_dev_tools.sh "0"` |
 | Generate Docker files only | `./install_dev_tools.sh --target=docker` |
-| Generate + build + run Docker | `./install_dev_tools.sh "11"` |
+| Generate + build + run Docker | `./install_dev_tools.sh d` |
 | After local install (source path) | `source ~/.zshrc` |
 | Build Docker with custom name | `./build_tools.sh` |
 | Multi-arch Docker build | `docker buildx build --platform linux/amd64,linux/arm64 -t dev-tools:latest .` |
