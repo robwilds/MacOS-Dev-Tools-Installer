@@ -69,12 +69,22 @@ check_maven_version() {
     return 1
 }
 
-check_ollama_version() {
-    if command -v ollama &>/dev/null; then
+check_mlx_version() {
+    # oMLX is a macOS app, check for CLI shim
+    if [ -x "/usr/local/bin/omlx" ] 2>/dev/null; then
         local version
-        version=$(ollama --version 2>&1 | sed -n 's/.*version is \([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p')
+        if command -v omlx &>/dev/null; then
+            # Extract version, handling both stable and RC versions
+            version=$(omlx --version 2>&1)
+            # Try to extract version number (handles both v0.6.2 and v0.6.2-rc1)
+            if [[ "$version" =~ v([0-9]+\.[0-9]+) ]]; then
+                echo "v${BASH_REMATCH[1]}"
+            elif [[ "$version" =~ v([0-9]+\.[0-9]+-[a-zA-Z-]+) ]]; then
+                echo "v${BASH_REMATCH[1]}"
+            fi
+        fi
         if [ -n "$version" ]; then
-            echo "$version"
+            echo "v$version"
             return 0
         fi
     fi
@@ -161,19 +171,6 @@ check_nvm_version() {
     return 1
 }
 
-check_mlx_llm_version() {
-    if python3 -c "import mlx_lm" 2>/dev/null; then
-        local version
-        version=$(pip3 show mlx-lm 2>/dev/null | sed -n 's/Version: \([0-9]*\.[0-9]*\.[0-9]*\)/\1/p')
-        if [ -n "$version" ]; then
-            echo "$version"
-            return 0
-        fi
-    fi
-    echo ""
-    return 1
-}
-
 # --- Fetch Latest Version Functions ---
 fetch_latest_python_version() {
     local version
@@ -200,15 +197,6 @@ fetch_latest_maven_version() {
     fi
 }
 
-fetch_latest_ollama_version() {
-    local version
-    version=$(curl -s https://registry.npmjs.org/ollama 2>/dev/null | sed -n 's/.*"version":"\([0-9]*\.[0-9]*\.[0-9]*\)".*/\1/p' | head -1)
-    if [ -n "$version" ]; then
-        echo "$version"
-    else
-        echo "0.24.0"  # fallback
-    fi
-}
 
 fetch_latest_opencode_version() {
     # OpenCode doesn't have a public API, use the version from --version after install
@@ -267,66 +255,51 @@ fetch_latest_aws_cli_version() {
     fi
 }
 
-fetch_latest_mlx_llm_version() {
-    # MLX-LM is on PyPI, fetch latest version
-    local version
-    version=$(pip3 index versions mlx-lm 2>/dev/null | sed -n 's/.*\([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p' | head -1)
-    if [ -n "$version" ]; then
-        echo "$version"
+fetch_latest_mlx_tag() {
+    local want_rc="$1"
+    local tags
+    tags=$(curl -s "https://github.com/jundot/omlx/releases" 2>/dev/null | grep -oE '/jundot/omlx/releases/tag/[^"#?]+' | sed 's|.*/tag/||' | awk '!seen[$0]++')
+    if [ "$want_rc" = true ]; then
+        echo "$tags" | grep -E 'rc[0-9]*($|-)' | head -1
     else
-        echo "0.0.1"  # fallback
+        echo "$tags" | grep -Ev 'rc[0-9]*($|-)|dev[0-9]*($|-)' | head -1
     fi
 }
 
-prompt_ollama_small_model() {
-    echo ""
-    read -p "Download a small model (<14B) now? (y/n) [y]: " choice
-    choice=${choice:-y}
-    [[ ! "$choice" =~ ^[Yy]$ ]] && return
-
-    local models=(
-        "llama3.2:1b"
-        "llama3.2:3b"
-        "qwen2.5:3b"
-        "phi3:3.8b"
-        "gemma2:2b"
-        "qwen2.5:7b"
-        "mistral:7b"
-        "phi3:7b"
-        "gemma2:9b"
-        "codellama:7b"
-        "deepseek-coder:6.7b"
-    )
-
-    echo "Popular small models (<14B):"
-    for i in "${!models[@]}"; do
-        echo "  $((i+1)). ${models[i]}"
-    done
-    echo "  0. Custom model name"
-
-    read -p "Select [1]: " selection
-    selection=${selection:-1}
-
-    local model=""
-    if [[ "$selection" == "0" ]]; then
-        read -p "Enter model name (e.g., llama3.2:1b): " model
-    elif [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "${#models[@]}" ]; then
-        model="${models[$((selection-1))]}"
+fetch_latest_mlx_version() {
+    local tag
+    tag=$(fetch_latest_mlx_tag false)
+    if [ -n "$tag" ]; then
+        echo "$tag"
     else
-        model="${models[0]}"
-    fi
-
-    if [ -n "$model" ]; then
-        echo "Starting background pull for $model..."
-        local log_file="/tmp/ollama_pull_${model//:/_}.log"
-        ollama pull "$model" > "$log_file" 2>&1 &
-        local pid=$!
-        echo "Pulling $model in background (PID: $pid)"
-        echo "Log: $log_file"
-        echo "Check progress with: tail -f $log_file"
-        echo "Or check status with: ollama ps / ollama list"
+        echo "v0.6.2"
     fi
 }
+
+fetch_latest_mlx_rc_version() {
+    local tag
+    tag=$(fetch_latest_mlx_tag true)
+    if [ -n "$tag" ]; then
+        echo "$tag"
+    else
+        echo "v0.6.3rc3"
+    fi
+}
+
+fetch_mlx_download_url() {
+    local tag="$1"
+    local ext="$2"
+    local prefer="$3"
+    local urls url=""
+    urls=$(curl -s "https://github.com/jundot/omlx/releases/expanded_assets/${tag}" 2>/dev/null | grep -oE "href=\"/jundot/omlx/releases/download/[^\"]+\.${ext}\"" | sed 's/^href="//;s/"$//')
+    if [ -n "$prefer" ]; then
+        url=$(echo "$urls" | grep "$prefer" | head -1)
+    fi
+    [ -z "$url" ] && url=$(echo "$urls" | head -1)
+    [ -n "$url" ] && echo "https://github.com${url}"
+}
+
+
 
 fetch_node_version_choices() {
     local majors
@@ -442,9 +415,6 @@ verify_all_versions() {
     if [ "$INSTALL_MAVEN" = true ]; then
         verify_tool_version "Maven" "mvn -version"
     fi
-    if [ "$INSTALL_OLLAMA" = true ]; then
-        verify_tool_version "Ollama" "ollama --version"
-    fi
     if [ "$INSTALL_OPENCODE" = true ]; then
         verify_tool_version "OpenCode" "opencode --version"
     fi
@@ -463,9 +433,6 @@ verify_all_versions() {
     if [ "$INSTALL_ANGULAR" = true ]; then
         verify_tool_version "Angular CLI" "ng version"
     fi
-    if [ "$INSTALL_MLX_LLM" = true ]; then
-        verify_tool_version "MLX-LM" "python3 -c \"import mlx_lm; print('mlx-lm installed')\""
-    fi
     
     echo -e "${BLUE}------------------------------------------------------------${NC}"
 }
@@ -474,15 +441,15 @@ verify_all_versions() {
 INSTALL_PYTHON=false
 INSTALL_JAVA=false
 INSTALL_MAVEN=false
-INSTALL_OLLAMA=false
 INSTALL_OPENCODE=false
 INSTALL_NODE=false
 INSTALL_CLAUDE=false
 INSTALL_ANGULAR=false
 INSTALL_NVM=false
 INSTALL_AWS_CLI=false
-INSTALL_MLX_LLM=false
-INSTALL_DOCKER_DMG=false
+INSTALL_OMLX=false
+INSTALL_MLX=false
+INSTALL_MLX_RC=false
 INSTALL_DOCKER_DMG=false
 INSTALL_DOCKER_DMG=false
 
@@ -763,14 +730,14 @@ parse_selection() {
         INSTALL_PYTHON=true
         INSTALL_JAVA=true
         INSTALL_MAVEN=true
-        INSTALL_OLLAMA=true
+        INSTALL_OMLX=true
+        INSTALL_MLX=true
         INSTALL_OPENCODE=true
         INSTALL_NODE=true
         INSTALL_CLAUDE=true
         INSTALL_ANGULAR=true
         INSTALL_NVM=true
         INSTALL_AWS_CLI=true
-        INSTALL_MLX_LLM=true
         INSTALL_DOCKER_DMG=true
         return
     fi
@@ -778,19 +745,20 @@ parse_selection() {
     IFS=',' read -ra numbers <<< "$selection"
     for num in "${numbers[@]}"; do
           case "${num// /}" in
-                1) INSTALL_DOCKER_DMG=true ;;
-                2) INSTALL_PYTHON=true ;;
-                3) INSTALL_JAVA=true ;;
-                4) INSTALL_MAVEN=true ;;
-                5) INSTALL_OLLAMA=true ;;
-                6) INSTALL_OPENCODE=true ;;
-                7) INSTALL_NVM=true ;;
-                8) INSTALL_NODE=true ;;
-                9) INSTALL_CLAUDE=true ;;
-               10) INSTALL_ANGULAR=true ;;
-               11) INSTALL_AWS_CLI=true ;;
-               12) INSTALL_MLX_LLM=true ;;
-          esac
+                 1) INSTALL_DOCKER_DMG=true ;;
+                 2) INSTALL_PYTHON=true ;;
+                 3) INSTALL_JAVA=true ;;
+                 4) INSTALL_MAVEN=true ;;
+                 5) INSTALL_MLX=true ;;
+                 6) INSTALL_MLX=true; INSTALL_MLX_RC=true ;;
+                 7) INSTALL_OPENCODE=true ;;
+                 8) INSTALL_NVM=true ;;
+                 9) INSTALL_NODE=true ;;
+                 10) INSTALL_CLAUDE=true ;;
+                 11) INSTALL_AWS_CLI=true ;;
+                 12) INSTALL_PYTHON=true; INSTALL_JAVA=true; INSTALL_MAVEN=true; INSTALL_MLX=true; INSTALL_OPENCODE=true; INSTALL_NODE=true; INSTALL_CLAUDE=true; INSTALL_ANGULAR=true; INSTALL_NVM=true; INSTALL_AWS_CLI=true; INSTALL_DOCKER_DMG=false ;;
+                 13) INSTALL_PYTHON=true; INSTALL_JAVA=true; INSTALL_MAVEN=true; INSTALL_MLX=true; INSTALL_MLX_RC=true; INSTALL_OPENCODE=true; INSTALL_NODE=true; INSTALL_CLAUDE=true; INSTALL_ANGULAR=true; INSTALL_NVM=true; INSTALL_AWS_CLI=true; INSTALL_DOCKER_DMG=false ;;
+           esac
     done
 
     # Handle letter options
@@ -810,13 +778,15 @@ show_menu() {
     echo "   2.   Python 3.14.5"
     echo "   3.   Java 17 (Oracle JDK)"
     echo "   4.   Maven 3.9.16"
-    echo "   5.   Ollama"
-    echo "   6.   OpenCode"
-    echo "   7.   nvm (Node Version Manager)"
-    echo "   8.   Node.js $NODE_VERSION"
-    echo "   9.   Claude Code"
-    echo "   10.  AWS CLI v2"
-    echo "   11.  MLX-LM"
+    echo "   5.   oMLX (MLX-based LLM App)"
+    echo "   6.   oMLX Release Candidate (RC)"
+    echo "   7.   OpenCode"
+    echo "   8.   nvm (Node Version Manager)"
+    echo "   9.   Node.js $NODE_VERSION"
+    echo "   10.  Claude Code"
+    echo "   11.  AWS CLI v2"
+    echo "   12.  All tools (except Docker)"
+    echo "   13.  All tools (except Docker, with oMLX RC)"
     echo ""
     echo "   d.   Build and run Docker container"
     echo ""
@@ -961,23 +931,82 @@ if [ "$INSTALL_MAVEN" = true ]; then
     fi
 fi
 
-# 4. INSTALL OLLAMA (Official Install Script)
-if [ "$INSTALL_OLLAMA" = true ]; then
-    OLLAMA_INSTALLED=$(check_ollama_version)
-    OLLAMA_LATEST=$(fetch_latest_ollama_version)
-    if should_upgrade "Ollama" "$OLLAMA_INSTALLED" "$OLLAMA_LATEST"; then
-        echo -e "${GREEN}Installing Ollama...${NC}"
-        if [ -n "$OLLAMA_INSTALLED" ]; then
-            echo -e "${YELLOW}Current version: $OLLAMA_INSTALLED${NC}"
+# 4. INSTALL oMLX (MLX-based LLM App)
+if [ "$INSTALL_MLX" = true ]; then
+    MLX_INSTALLED=$(check_mlx_version)
+    if [ "$INSTALL_MLX_RC" = true ]; then
+        MLX_LATEST=$(fetch_latest_mlx_rc_version)
+        echo -e "${BLUE}Latest oMLX Release Candidate online: ${MLX_LATEST}${NC}"
+    else
+        MLX_LATEST=$(fetch_latest_mlx_version)
+        echo -e "${BLUE}Latest oMLX stable version online: ${MLX_LATEST}${NC}"
+    fi
+    
+    MLX_INSTALLED_CMP=$(echo "$MLX_INSTALLED" | sed 's/^v//;s/-\{0,1\}rc[0-9]*$//')
+    MLX_LATEST_CMP=$(echo "$MLX_LATEST" | sed 's/^v//;s/-\{0,1\}rc[0-9]*$//')
+    if should_upgrade "oMLX" "$MLX_INSTALLED_CMP" "$MLX_LATEST_CMP"; then
+        echo -e "${GREEN}Installing oMLX...${NC}"
+        if [ -n "$MLX_INSTALLED" ]; then
+            echo -e "${YELLOW}Current version: $MLX_INSTALLED${NC}"
         fi
-        curl -fsSL https://ollama.com/install.sh | sh
-        source ~/.nvm/nvm.sh 2>/dev/null || true
-        # Prompt for model download only on fresh install
-        if [ -z "$OLLAMA_INSTALLED" ]; then
-            prompt_ollama_small_model
+        LATEST_TAG="$MLX_LATEST"
+        
+        # Detect platform and download appropriate binary
+        if [ "$(uname -m)" = "arm64" ]; then
+            # macOS - download DMG to Downloads directory
+            DOWNLOAD_DIR="$HOME/Downloads"
+            if [ "$INSTALL_MLX_RC" = true ]; then
+                echo -e "${GREEN}Detected macOS (arm64) - downloading oMLX RC DMG...${NC}"
+            else
+                echo -e "${GREEN}Detected macOS (arm64) - downloading oMLX DMG...${NC}"
+            fi
+            OS_MAJOR=$(sw_vers -productVersion 2>/dev/null | cut -d. -f1)
+            MLX_VARIANT="macos26-27"
+            if [ -n "$OS_MAJOR" ] && [ "$OS_MAJOR" -lt 26 ]; then
+                MLX_VARIANT="macos15-sequoia"
+            fi
+            DOWNLOAD_URL=$(fetch_mlx_download_url "$LATEST_TAG" "dmg" "$MLX_VARIANT")
+            if [ -z "$DOWNLOAD_URL" ]; then
+                DOWNLOAD_URL="https://github.com/jundot/omlx/releases/download/${LATEST_TAG}/oMLX-${LATEST_TAG#v}-${MLX_VARIANT}.dmg"
+            fi
+            REMOTE_FILE=$(basename "$DOWNLOAD_URL")
+            curl_response=$(curl -fSL -o "$DOWNLOAD_DIR/$REMOTE_FILE" "$DOWNLOAD_URL" 2>&1)
+            if [ $? -ne 0 ]; then
+                echo -e "${RED}Error downloading oMLX DMG:${NC}"
+                echo -e "${RED}  $curl_response${NC}"
+                echo -e "${YELLOW}  Check your internet connection and try again.${NC}"
+                exit 1
+            fi
+            echo -e "${GREEN}oMLX DMG downloaded to $DOWNLOAD_DIR/$REMOTE_FILE${NC}"
+            echo -e "${YELLOW}Please open $DOWNLOAD_DIR/$REMOTE_FILE and install oMLX to Applications.${NC}"
+            echo -e "${BLUE}After installation, the CLI will be available at /usr/local/bin/omlx${NC}"
+        else
+            # Linux - download shell script to same directory as script
+            if [ "$INSTALL_MLX_RC" = true ]; then
+                echo -e "${GREEN}Detected Linux - downloading oMLX RC shell script...${NC}"
+            else
+                echo -e "${GREEN}Detected Linux - downloading oMLX shell script...${NC}"
+            fi
+            SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+            DOWNLOAD_URL=$(fetch_mlx_download_url "$LATEST_TAG" "sh")
+            if [ -z "$DOWNLOAD_URL" ]; then
+                DOWNLOAD_URL="https://github.com/jundot/omlx/releases/download/${LATEST_TAG}/oMLX-${LATEST_TAG#v}.sh"
+            fi
+            REMOTE_FILE=$(basename "$DOWNLOAD_URL")
+            curl_response=$(curl -fSL -o "$SCRIPT_DIR/$REMOTE_FILE" "$DOWNLOAD_URL" 2>&1)
+            if [ $? -ne 0 ]; then
+                echo -e "${RED}Error downloading oMLX shell script:${NC}"
+                echo -e "${RED}  $curl_response${NC}"
+                echo -e "${YELLOW}  Check your internet connection and try again.${NC}"
+                exit 1
+            fi
+            chmod +x "$SCRIPT_DIR/$REMOTE_FILE"
+            echo -e "${GREEN}oMLX shell script downloaded to $SCRIPT_DIR/$REMOTE_FILE${NC}"
+            echo -e "${BLUE}Running oMLX installation...${NC}"
+            "$SCRIPT_DIR/$REMOTE_FILE" /usr/local/bin/omlx
         fi
     else
-        echo -e "${YELLOW}Ollama already at latest version ($OLLAMA_INSTALLED), skipping...${NC}"
+        echo -e "${YELLOW}oMLX already at latest version ($MLX_INSTALLED), skipping...${NC}"
     fi
 fi
 
@@ -1071,21 +1100,6 @@ if [ "$INSTALL_AWS_CLI" = true ]; then
         rm -f AWSCLIV2.pkg
     else
         echo -e "${YELLOW}AWS CLI already at latest version ($AWS_CLI_INSTALLED), skipping...${NC}"
-    fi
-fi
-
-# 11. INSTALL MLX-LM (via pip)
-if [ "$INSTALL_MLX_LLM" = true ]; then
-    MLX_LLM_INSTALLED=$(check_mlx_llm_version)
-    MLX_LLM_LATEST=$(fetch_latest_mlx_llm_version)
-    if should_upgrade "MLX-LM" "$MLX_LLM_INSTALLED" "$MLX_LLM_LATEST"; then
-        echo -e "${GREEN}Installing MLX-LM via pip...${NC}"
-        if [ -n "$MLX_LLM_INSTALLED" ]; then
-            echo -e "${YELLOW}Current version: $MLX_LLM_INSTALLED${NC}"
-        fi
-        PIP_CMD=$(command -v pip3 || command -v pip) && $PIP_CMD install mlx-lm
-    else
-        echo -e "${YELLOW}MLX-LM already at latest version ($MLX_LLM_INSTALLED), skipping...${NC}"
     fi
 fi
 

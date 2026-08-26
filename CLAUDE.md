@@ -11,7 +11,7 @@ Single bash script (`install_dev_tools.sh`) that installs dev tools locally on m
 - After local installation: `source ~/.zshrc`
 
 ## Menu Options Reference
-1: Python 3.14.5, 2: Java 17.0.12, 3: Maven 3.9.16, 4: Ollama, 5: OpenCode, 6: nvm, 7: Node.js 26.1.0, 8: Claude Code, 9: Angular CLI, 10: AWS CLI v2, 11: Build/run Docker, 0: All
+1: Python 3.14.5, 2: Java 17.0.12, 3: Maven 3.9.16, 4: oMLX App, 5: OpenCode, 6: nvm, 7: Node.js 26.1.0, 8: Claude Code, 9: Angular CLI, 10: AWS CLI v2, 11: Build/run Docker, 0: All
 
 > **Keep Docker (`11`) as the last numbered menu item.** If adding new tools, insert them before Docker so the build-and-run-Docker action always stays at the end.
 
@@ -28,4 +28,4 @@ Single bash script (`install_dev_tools.sh`) that installs dev tools locally on m
 - Script detects `arm64` vs `x86_64` for arch-specific URLs
 - Docker mode: `--target=docker` generates three files then exits; option `10` builds + runs
 - Local installs: Java in `/Library/Java/JavaVirtualMachines/`, Maven in `/opt/maven/maven`, symlinks in `/usr/local/bin`
-- Docker installs to `/opt/` (excludes Ollama, OpenCode, Claude Code)
+- Docker installs to `/opt/` (excludes oMLX, OpenCode, Claude Code)

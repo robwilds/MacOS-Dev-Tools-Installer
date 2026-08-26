@@ -17,20 +17,21 @@ Single bash script (`install_dev_tools.sh`) installs dev tools locally on macOS 
 | Native arch Docker build | `docker build -t dev-tools:latest .` |
 
 ## Menu Reference
-`1` Python 3.14.5 · `2` Java 17.0.12 · `3` Maven 3.9.16 · `4` Ollama · `5` OpenCode · `6` nvm · `7` Node.js 26.1.0 · `8` Claude Code · `9` Angular CLI · `10` AWS CLI v2 · `11` Docker (build+run) · `0` All
+`1` Docker (Desktop for Mac) · `2` Python 3.14.5 · `3` Java 17.0.12 · `4` Maven 3.9.16 · `5` oMLX · `6` oMLX RC · `7` OpenCode · `8` nvm · `9` Node.js 26.1.0 · `10` Claude Code · `11` AWS CLI v2 · `12` All (except Docker) · `13` All (except Docker, with oMLX RC) · `0` All · `d` Docker (build+run)
 
-> **Keep Docker (`11`) as the last numbered menu item.** If adding new tools, insert them before Docker so the build-and-run-Docker action always stays at the end.
+> **Keep Docker (`13`) as the last numbered menu item.** If adding new tools, insert them before Docker so the build-and-run-Docker action always stays at the end.
 
 ## Architecture
 - **Source of truth**: `install_dev_tools.sh`. Do NOT modify generated files (`Dockerfile`, `docker-compose.yml`, `.dockerignore`).
 - `build_tools.sh` prompts for a repo name, tags as `:develop`. Custom names require manual `docker-compose.yml` update (the script does not patch it).
 - Dockerfile is multi-stage (Python, Java, Maven, Node.js stages merged into final image).
-- Docker image excludes Ollama, OpenCode, Claude Code. Angular CLI, nvm, and AWS CLI are installed at Docker build time (via `npm install -g`, nvm install script, official AWS installer).
+- Docker image excludes oMLX App, OpenCode, Claude Code. Angular CLI, nvm, and AWS CLI are installed at Docker build time (via `npm install -g`, nvm install script, official AWS installer).
 - **Version fetching**: Each tool has a `fetch_latest_*` function that queries upstream sources. Hardcoded fallbacks used when fetch fails.
 - **Upgrade prompts**: On each run, script checks installed vs latest version and prompts to upgrade if newer available.
 
 ## Gotchas
 - **Menu Alignment**: In `show_menu()`, maintain vertical alignment between digits and descriptions. Single-digit options (1-9) need 3 spaces after the dot; double-digit options (10+) need 2 spaces.
+- **oMLX Installation**: Downloads the latest oMLX .dmg (macOS) or .sh (Linux) from GitHub releases (jundot/omlx). macOS downloads DMG to ~/Downloads, Linux downloads shell script to the script directory. Creates a CLI shim at `/usr/local/bin/omlx`. Supports stable and RC versions.
 - **Version regexes are brittle** — parsing `--version` output via `sed`. No CI catches format changes. Update `fetch_latest_*` and `check_*_version` functions if tool output changes.
 - **Java URL** hardcoded for macOS `aarch64`; Oracle download scheme changes break local installs.
 - **Arch detection** (`install_dev_tools.sh:770`): `uname -m` -> `arm64` or `x86_64` (controls Java arch, Node.js pkg).
