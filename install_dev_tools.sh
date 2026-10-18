@@ -70,21 +70,13 @@ check_maven_version() {
 }
 
 check_mlx_version() {
-    # oMLX is a macOS app, check for CLI shim
-    if [ -x "/usr/local/bin/omlx" ] 2>/dev/null; then
-        local version
-        if command -v omlx &>/dev/null; then
-            # Extract version, handling both stable and RC versions
-            version=$(omlx --version 2>&1)
-            # Try to extract version number (handles both v0.6.2 and v0.6.2-rc1)
-            if [[ "$version" =~ v([0-9]+\.[0-9]+) ]]; then
-                echo "v${BASH_REMATCH[1]}"
-            elif [[ "$version" =~ v([0-9]+\.[0-9]+-[a-zA-Z-]+) ]]; then
-                echo "v${BASH_REMATCH[1]}"
-            fi
-        fi
-        if [ -n "$version" ]; then
-            echo "v$version"
+    # Return local oMLX CLI version prefixed with 'v', e.g., v0.6.2 or v0.6.2-rc1
+    if [ -x "/usr/local/bin/omlx" ] 2>/dev/null && command -v omlx &>/dev/null; then
+        local raw
+        raw=$(omlx --version 2>/dev/null)
+        # Match numeric part, optional RC suffix, with or without leading 'v'
+        if [[ "$raw" =~ ([0-9]+\.[0-9]+(?:-[a-zA-Z0-9]+)?) ]]; then
+            echo "v${BASH_REMATCH[1]}"
             return 0
         fi
     fi
@@ -174,7 +166,14 @@ check_nvm_version() {
 # --- Fetch Latest Version Functions ---
 fetch_latest_python_version() {
     local version
-    version=$(curl -s https://www.python.org/downloads/ 2>/dev/null | sed -n 's/.*latest released release.*Python \([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p' | head -1)
+    local match
+    # --compressed: python.org serves gzip; piping raw compressed bytes into sed makes
+    #   BSD sed abort with "RE error: illegal byte sequence" under a UTF-8 locale.
+    # --max-time: don't let a slow connection hang the menu.
+    # The downloads page links the current stable source tarball as /ftp/python/X.Y.Z/;
+    # the old "latest released release" markup no longer exists.
+    match=$(curl -s --compressed --max-time 10 https://www.python.org/downloads/ 2>/dev/null | grep -oE '/ftp/python/[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+    version=${match##*/}
     if [ -n "$version" ]; then
         echo "$version"
     else
@@ -189,7 +188,9 @@ fetch_latest_java_version() {
 
 fetch_latest_maven_version() {
     local version
-    version=$(curl -s https://www.apache.org/dyn/closer.cgi/maven/maven-3/ 2>/dev/null | sed -n 's/.*href=".*maven-3\/\([0-9]*\.[0-9]*\.[0-9]*\)\/.*".*/\1/p' | head -1)
+    # closer.cgi no longer lists mirrors/versions; parse the CDN directory listing
+    # (e.g. href="3.10.0/") and take the highest version.
+    version=$(curl -s --compressed https://dlcdn.apache.org/maven/maven-3/ 2>/dev/null | grep -oE 'href="[0-9]+\.[0-9]+\.[0-9]+/"' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -V | tail -1)
     if [ -n "$version" ]; then
         echo "$version"
     else
@@ -207,7 +208,9 @@ fetch_latest_node_version() {
     local major
     major=$(echo "$NODE_VERSION" | cut -d. -f1)
     local version
-    version=$(curl -s "https://nodejs.org/dist/latest-v${major}.x/" 2>/dev/null | sed -n 's/.*href="node-v\([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p' | head -1)
+    # The listing hrefs are /dist/latest-vXX.x/node-vX.Y.Z-... (full path), so match
+    # the node-vX.Y.Z anywhere in the line rather than right after href=".
+    version=$(curl -s --compressed "https://nodejs.org/dist/latest-v${major}.x/" 2>/dev/null | grep -oE 'node-v[0-9]+\.[0-9]+\.[0-9]+' | head -1 | sed 's/^node-v//')
     if [ -n "$version" ]; then
         echo "$version"
     else
@@ -237,7 +240,7 @@ fetch_latest_angular_version() {
 
 fetch_latest_nvm_version() {
     local version
-    version=$(curl -s https://api.github.com/repos/nvm-sh/nvm/releases/latest 2>/dev/null | sed -n 's/.*"tag_name": "v\([0-9]*\.[0-9]*\.[0-9]*\)".*/\1/p')
+    version=$(curl -s --compressed https://api.github.com/repos/nvm-sh/nvm/releases/latest 2>/dev/null | sed -n 's/.*"tag_name": "v\([0-9]*\.[0-9]*\.[0-9]*\)".*/\1/p')
     if [ -n "$version" ]; then
         echo "$version"
     else
@@ -247,7 +250,9 @@ fetch_latest_nvm_version() {
 
 fetch_latest_aws_cli_version() {
     local version
-    version=$(curl -s https://api.github.com/repos/aws/aws-cli/releases/latest 2>/dev/null | sed -n 's/.*"tag_name": "\([0-9]*\.[0-9]*\.[0-9]*\)".*/\1/p')
+    # aws-cli has no GitHub Releases (releases/latest returns 404); tags are named
+    # "2.38.1" (no leading v). Take the highest from the first page of tags.
+    version=$(curl -s --compressed https://api.github.com/repos/aws/aws-cli/tags 2>/dev/null | grep -oE '"name": "[0-9]+\.[0-9]+\.[0-9]+"' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -V | tail -1)
     if [ -n "$version" ]; then
         echo "$version"
     else
@@ -258,7 +263,7 @@ fetch_latest_aws_cli_version() {
 fetch_latest_mlx_tag() {
     local want_rc="$1"
     local tags
-    tags=$(curl -s "https://github.com/jundot/omlx/releases" 2>/dev/null | grep -oE '/jundot/omlx/releases/tag/[^"#?]+' | sed 's|.*/tag/||' | awk '!seen[$0]++')
+    tags=$(curl -s --compressed "https://github.com/jundot/omlx/releases" 2>/dev/null | grep -oE '/jundot/omlx/releases/tag/[^"#?]+' | sed 's|.*/tag/||' | awk '!seen[$0]++')
     if [ "$want_rc" = true ]; then
         echo "$tags" | grep -E 'rc[0-9]*($|-)' | head -1
     else
@@ -291,7 +296,7 @@ fetch_mlx_download_url() {
     local ext="$2"
     local prefer="$3"
     local urls url=""
-    urls=$(curl -s "https://github.com/jundot/omlx/releases/expanded_assets/${tag}" 2>/dev/null | grep -oE "href=\"/jundot/omlx/releases/download/[^\"]+\.${ext}\"" | sed 's/^href="//;s/"$//')
+    urls=$(curl -s --compressed "https://github.com/jundot/omlx/releases/expanded_assets/${tag}" 2>/dev/null | grep -oE "href=\"/jundot/omlx/releases/download/[^\"]+\.${ext}\"" | sed 's/^href="//;s/"$//')
     if [ -n "$prefer" ]; then
         url=$(echo "$urls" | grep "$prefer" | head -1)
     fi
@@ -303,10 +308,11 @@ fetch_mlx_download_url() {
 
 fetch_node_version_choices() {
     local majors
-    majors=$(curl -s https://nodejs.org/dist/ 2>/dev/null | sed -n 's/.*href="latest-v\([0-9]*\)\.x\/".*/\1/p' | sort -rn | head -3)
+    majors=$(curl -s --compressed https://nodejs.org/dist/ 2>/dev/null | sed -n 's/.*href="latest-v\([0-9]*\)\.x\/".*/\1/p' | sort -rn | head -3)
     for major in $majors; do
         local full
-        full=$(curl -s "https://nodejs.org/dist/latest-v${major}.x/" 2>/dev/null | sed -n 's/.*href="node-v\([0-9]*\.[0-9]*\.[0-9]*\)\.pkg".*/\1/p' | head -1)
+        # hrefs are /dist/latest-vXX.x/node-vX.Y.Z.pkg (full path), so match node-vX.Y.Z.pkg anywhere
+        full=$(curl -s --compressed "https://nodejs.org/dist/latest-v${major}.x/" 2>/dev/null | grep -oE 'node-v[0-9]+\.[0-9]+\.[0-9]+\.pkg' | head -1 | sed 's/^node-v//;s/\.pkg$//')
         if [ -n "$full" ]; then
             echo "$major $full"
         fi
@@ -461,10 +467,17 @@ NODE_VERSION="$DEFAULT_NODE_VERSION"
 generate_dockerfile() {
     local output_file="${1:-Dockerfile}"
     local node_version="${2:-26.1.0}"
+    # Default to the latest Python from python.org (falls back to 3.14.5 if the fetch fails)
+    local python_version="${3:-$(fetch_latest_python_version)}"
+    # Default to the latest Maven from Apache (falls back to 3.9.16 if the fetch fails)
+    local maven_version="${4:-$(fetch_latest_maven_version)}"
 
+    # Create the Dockerfile template with placeholders for version variables
     cat > "$output_file" << 'DOCKERFILE'
 # Multi-arch Dockerfile for development tools
 # Build with: docker buildx build --platform linux/amd64,linux/arm64 -t dev-tools:latest .
+# Args: PYTHON_VERSION (overridable via --build-arg); node/python/maven versions are
+# baked in at generation time by install_dev_tools.sh generate_dockerfile
 
 FROM --platform=$BUILDPLATFORM ubuntu:22.04 AS base
 RUN apt-get update && apt-get install -y \
@@ -478,18 +491,20 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
-# Python 3.14.5 (build from source for latest version)
+# Python __PYTHON_VERSION__ (build from source for latest version)
 FROM base AS python
 ARG TARGETARCH
+# Default baked in at generation time; overridable: docker build --build-arg PYTHON_VERSION=x.y.z
+ARG PYTHON_VERSION=__PYTHON_VERSION__
 RUN ARCH_NAME="${TARGETARCH:-$(uname -m)}" && \
     if [ "$ARCH_NAME" = "arm64" ] || [ "$ARCH_NAME" = "aarch64" ]; then ARCH_NAME="aarch64"; else ARCH_NAME="x86_64"; fi && \
     cd /tmp && \
-    curl -fsSL https://www.python.org/ftp/python/3.14.5/Python-3.14.5.tar.xz | tar -xJ && \
-    cd Python-3.14.5 && \
+    curl -fsSL https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTHON_VERSION}.tar.xz | tar -xJ && \
+    cd Python-${PYTHON_VERSION} && \
     ./configure --enable-optimizations --with-ensurepip=install --prefix=/usr/local && \
     make -j$(nproc) && \
     make install && \
-    cd /tmp && rm -rf Python-3.14.5
+    cd /tmp && rm -rf Python-${PYTHON_VERSION}
 RUN python3 --version
 
 # Java 17 (extract from tarball)
@@ -503,12 +518,13 @@ RUN JAVA_ARCH="${TARGETARCH:-$(uname -m)}" && \
 ENV JAVA_HOME=/opt/jdk-17.0.12
 ENV PATH=/usr/local/bin:$JAVA_HOME/bin:$PATH
 
-# Maven 3.9.16
+# Maven __MAVEN_VERSION__ (install to version-agnostic path, like Node.js)
 FROM base AS maven
 RUN mkdir -p /opt/maven && \
-    curl -fsSL https://dlcdn.apache.org/maven/maven-3/3.9.16/binaries/apache-maven-3.9.16-bin.tar.gz | tar -xz -C /opt/maven && \
-    ln -sf /opt/maven/apache-maven-3.9.16/bin/mvn /usr/local/bin/mvn
-ENV MAVEN_HOME=/opt/maven/apache-maven-3.9.16
+    curl -fsSL https://dlcdn.apache.org/maven/maven-3/__MAVEN_VERSION__/binaries/apache-maven-__MAVEN_VERSION__-bin.tar.gz | tar -xz -C /opt/maven && \
+    mv /opt/maven/apache-maven-__MAVEN_VERSION__ /opt/maven/maven && \
+    ln -sf /opt/maven/maven/bin/mvn /usr/local/bin/mvn
+ENV MAVEN_HOME=/opt/maven/maven
 ENV PATH=/usr/local/bin:$MAVEN_HOME/bin:$PATH
 
 # Node.js __NODE_VERSION__ (install to version-agnostic path)
@@ -528,11 +544,11 @@ FROM base
 ARG TARGETARCH
 COPY --from=python /usr/local /usr/local
 COPY --from=java /opt/jdk-17.0.12 /opt/jdk-17.0.12
-COPY --from=maven /opt/maven/apache-maven-3.9.16 /opt/maven/apache-maven-3.9.16
+COPY --from=maven /opt/maven/maven /opt/maven/maven
 COPY --from=nodejs /opt/node /opt/node
 
 ENV JAVA_HOME=/opt/jdk-17.0.12
-ENV MAVEN_HOME=/opt/maven/apache-maven-3.9.16
+ENV MAVEN_HOME=/opt/maven/maven
 ENV PATH=/usr/local/bin:/opt/node/bin:$JAVA_HOME/bin:$MAVEN_HOME/bin:$PATH
 
 # Angular CLI (installed via npm)
@@ -556,7 +572,10 @@ WORKDIR /workspace
 CMD ["/bin/bash"]
 DOCKERFILE
 
+    # Substitute the version placeholders
     sed -i '' "s/__NODE_VERSION__/${node_version}/g" "$output_file"
+    sed -i '' "s/__PYTHON_VERSION__/${python_version}/g" "$output_file"
+    sed -i '' "s/__MAVEN_VERSION__/${maven_version}/g" "$output_file"
 }
 
 generate_compose() {
@@ -578,7 +597,7 @@ services:
       - ~/.gitconfig:/root/.gitconfig:ro
     environment:
       - JAVA_HOME=/opt/jdk-17.0.12
-      - MAVEN_HOME=/opt/maven/apache-maven-3.9.16
+      - MAVEN_HOME=/opt/maven/maven
     tty: true
     stdin_open: true
     command: /bin/bash
@@ -639,7 +658,7 @@ build_and_run_docker() {
     container_name=$(echo "$container_name" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '_' | sed 's/_*$//')
 
     echo -e "${GREEN}Generating Docker build files for '${container_name}'...${NC}"
-    generate_dockerfile Dockerfile "$NODE_VERSION"
+    generate_dockerfile Dockerfile "$NODE_VERSION" "$PYTHON_LATEST"
     generate_compose docker-compose.yml "$container_name"
     generate_dockerignore .dockerignore
     echo -e "${GREEN}Docker files generated.${NC}"
@@ -665,7 +684,7 @@ build_and_run_docker() {
 if [ "$INSTALL_MODE" == "docker" ]; then
     echo -e "${GREEN}Generating Docker build files...${NC}"
     
-    generate_dockerfile Dockerfile "$NODE_VERSION"
+    generate_dockerfile Dockerfile "$NODE_VERSION" "$PYTHON_LATEST"
     echo -e "${GREEN}Created Dockerfile${NC}"
 
     generate_compose docker-compose.yml
@@ -775,9 +794,9 @@ show_menu() {
     echo "Select tools to install (comma-separated numbers):"
     echo ""
     echo "   1.   Install Docker for Apple Silicon/Mac Intel"
-    echo "   2.   Python 3.14.5"
+    echo "   2.   Python $(fetch_latest_python_version)"
     echo "   3.   Java 17 (Oracle JDK)"
-    echo "   4.   Maven 3.9.16"
+    echo "   4.   Maven $(fetch_latest_maven_version)"
     echo "   5.   oMLX (MLX-based LLM App)"
     echo "   6.   oMLX Release Candidate (RC)"
     echo "   7.   OpenCode"
@@ -875,8 +894,8 @@ if [ "$INSTALL_PYTHON" = true ]; then
         if [ -n "$PYTHON_INSTALLED" ]; then
             echo -e "${YELLOW}Current version: $PYTHON_INSTALLED${NC}"
         fi
-        curl -L -O https://www.python.org/ftp/python/3.14.5/python-3.14.5-macos11.pkg
-        sudo installer -pkg python-3.14.5-macos11.pkg -target /
+        curl -L -O "https://www.python.org/ftp/python/$PYTHON_LATEST/python-$PYTHON_LATEST-macos11.pkg"
+        sudo installer -pkg "python-$PYTHON_LATEST-macos11.pkg" -target /
     else
         echo -e "${YELLOW}Python already at latest version ($PYTHON_INSTALLED), skipping...${NC}"
     fi
@@ -920,11 +939,13 @@ if [ "$INSTALL_MAVEN" = true ]; then
         if [ -n "$MAVEN_INSTALLED" ]; then
             echo -e "${YELLOW}Current version: $MAVEN_INSTALLED${NC}"
         fi
-        curl -L -O https://dlcdn.apache.org/maven/maven-3/3.9.16/binaries/apache-maven-3.9.16-bin.tar.gz
-        tar -xzf apache-maven-3.9.16-bin.tar.gz
+        # Install the version we compared against (fetch_latest_maven_version),
+        # otherwise an older hardcoded URL would re-prompt on every run.
+        curl -L -O "https://dlcdn.apache.org/maven/maven-3/${MAVEN_LATEST}/binaries/apache-maven-${MAVEN_LATEST}-bin.tar.gz"
+        tar -xzf "apache-maven-${MAVEN_LATEST}-bin.tar.gz"
         sudo mkdir -p /opt/maven
         sudo rm -rf /opt/maven/maven
-        sudo mv apache-maven-3.9.16 /opt/maven/maven
+        sudo mv "apache-maven-${MAVEN_LATEST}" /opt/maven/maven
         sudo ln -sf /opt/maven/maven/bin/mvn /usr/local/bin/mvn
     else
         echo -e "${YELLOW}Maven already at latest version ($MAVEN_INSTALLED), skipping...${NC}"
@@ -970,7 +991,14 @@ if [ "$INSTALL_MLX" = true ]; then
                 DOWNLOAD_URL="https://github.com/jundot/omlx/releases/download/${LATEST_TAG}/oMLX-${LATEST_TAG#v}-${MLX_VARIANT}.dmg"
             fi
             REMOTE_FILE=$(basename "$DOWNLOAD_URL")
-            curl_response=$(curl -fSL -o "$DOWNLOAD_DIR/$REMOTE_FILE" "$DOWNLOAD_URL" 2>&1)
+            # Ensure download URL is valid
+            if [ -z "$DOWNLOAD_URL" ]; then
+                echo -e "${RED}Error: could not determine download URL for $LATEST_TAG${NC}"
+                exit 1
+            fi
+            echo -e "${GREEN}Downloading oMLX DMG to $DOWNLOAD_DIR/${REMOTE_FILE}...${NC}"
+            # Add timeout to prevent indefinite hangs
+            curl_response=$(curl --connect-timeout 10 --max-time 300 -fSL -o "$DOWNLOAD_DIR/$REMOTE_FILE" "$DOWNLOAD_URL" 2>&1)
             if [ $? -ne 0 ]; then
                 echo -e "${RED}Error downloading oMLX DMG:${NC}"
                 echo -e "${RED}  $curl_response${NC}"
@@ -1049,8 +1077,10 @@ if [ "$INSTALL_NODE" = true ]; then
         if [ -n "$NODE_INSTALLED" ]; then
             echo -e "${YELLOW}Current version: v$NODE_INSTALLED${NC}"
         fi
-        curl -L -O "$NODE_URL"
-        sudo installer -pkg "node-v${NODE_VERSION}.pkg" -target /
+        # Install NODE_LATEST (what should_upgrade compared against), not the
+        # possibly-stale NODE_VERSION/NODE_URL from the architecture block above.
+        curl -L -O "https://nodejs.org/dist/v${NODE_LATEST}/node-v${NODE_LATEST}.pkg"
+        sudo installer -pkg "node-v${NODE_LATEST}.pkg" -target /
     else
         echo -e "${YELLOW}Node.js already at latest version (v$NODE_INSTALLED), skipping...${NC}"
     fi

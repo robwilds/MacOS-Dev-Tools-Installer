@@ -39,12 +39,12 @@ Displays usage information and available options.
 
 Two approaches — one-step automated or manual.
 
-#### One-step: Auto-build and run (menu item 13 or `"13"`)
+#### One-step: Auto-build and run (menu `d` or argument `d`)
 
 Generates Docker files, builds the image (native arch), and starts the container in one shot. Checks if Docker is running first and attempts to start it on macOS/Linux:
 
 ```bash
-./install_dev_tools.sh "13"
+./install_dev_tools.sh d
 ```
 
 You'll be prompted for a container name (default: `dev-tools`).
@@ -76,14 +76,23 @@ docker-compose up -d
 docker exec -it dev-tools bash
 ```
 
-**Docker image includes:** Python 3.14.5, Java 17, Maven 3.9.16, Node.js, nvm, Angular CLI, AWS CLI
+#### Build helper: `build_tools.sh`
+
+Prompts for a custom image name (default `dev-tools`), shows an action plan, and optionally runs the build (tagged `:develop`):
+
+```bash
+./build_tools.sh                 # build with the versions baked into the existing Dockerfile
+./build_tools.sh --fetch-python  # also fetch latest Python -> --build-arg PYTHON_VERSION=x.y.z
+```
+
+**Docker image includes:** Python (latest at generation), Java 17, Maven (latest at generation), Node.js, nvm, Angular CLI, AWS CLI
 
 ## Menu Options
 
 - **1** - Docker (Desktop for Mac)
-- **2** - Python 3.14.5
+- **2** - Python (latest, fetched from python.org)
 - **3** - Java 17 (Oracle JDK)
-- **4** - Maven 3.9.16
+- **4** - Maven (latest, fetched from Apache)
 - **5** - oMLX (MLX-based LLM App)
 - **6** - oMLX Release Candidate (RC)
 - **7** - OpenCode
@@ -120,30 +129,34 @@ omlx --version  # macOS: /usr/local/bin/omlx
 ## Version Checking
 
 The installer automatically checks if newer versions are available for each tool:
-- **Python**: Checks against latest release from python.org
+- **Python**: Latest stable release linked from python.org/downloads (`/ftp/python/X.Y.Z/`)
 - **Java**: Checks for latest 17.x version
-- **Maven**: Checks against latest 3.x from Apache
+- **Maven**: Latest 3.x from the Apache CDN (`dlcdn.apache.org` listing, highest wins)
 - **Node.js**: Checks against latest version of the selected major line from nodejs.org
 - **oMLX**: Checks GitHub releases from jundot/omlx (supports stable and RC versions)
 - **OpenCode**: Uses hardcoded version
 - **Claude Code**: Checks npm registry
 - **Angular CLI**: Checks npm registry via `npm view @angular/cli version`
-- **AWS CLI**: Checks latest GitHub release from aws/aws-cli
+- **AWS CLI**: Latest tag from the aws-cli GitHub repo (aws-cli publishes tags, not releases)
 - **nvm**: Checks latest GitHub release from nvm-sh/nvm
 
-If a newer version is available, you'll be prompted to upgrade.
+Menu items **2** (Python) and **4** (Maven) display the fetched versions. All fetchers use `curl --compressed` (some sites serve gzip) with portable parsers, and fall back to a hardcoded version if the fetch fails.
+
+If a newer version is available, you'll be prompted to upgrade — and the installer downloads exactly the version it compared against.
 
 ## Docker Image Contents
 
 | Tool         | Version | Installation Method |
 |--------------|---------|-------------------|
-| Python       | 3.14.5  | Build from source |
-| Java         | 17      | Oracle JDK tarball |
-| Maven        | 3.9.16  | Binary archive    |
+| Python       | Latest at generation (fallback 3.14.5) | Build from source; `ARG PYTHON_VERSION` overridable |
+| Java         | 17.0.12 | Oracle JDK tarball |
+| Maven        | Latest at generation (fallback 3.9.16) | Binary archive → `/opt/maven/maven` |
 | Node.js      | 26.1.0  | Binary archive    |
 | nvm          | 0.40.4  | Install script    |
 | Angular CLI  | Latest  | npm install       |
 | AWS CLI      | Latest  | Official installer|
+
+"Latest" is resolved when `./install_dev_tools.sh --target=docker` generates the files — rerun it to pick up new Python/Maven releases. Override Python at build time with `docker build --build-arg PYTHON_VERSION=x.y.z .`
 
 The following tools are **local-only** (not in the Docker image): oMLX, OpenCode, Claude Code.
 

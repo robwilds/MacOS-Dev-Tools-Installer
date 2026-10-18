@@ -9,10 +9,10 @@ services:
       dockerfile: Dockerfile
     volumes:
       - ./projects:/workspace
-      #- ~/.gitconfig:/root/.gitconfig:ro
+      - ~/.gitconfig:/root/.gitconfig:ro
     environment:
       - JAVA_HOME=/opt/jdk-17.0.12
-      - MAVEN_HOME=/opt/maven/apache-maven-3.9.16
+      - MAVEN_HOME=/opt/maven/maven
     tty: true
     stdin_open: true
     command: /bin/bash

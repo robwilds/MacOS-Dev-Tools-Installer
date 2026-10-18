@@ -1,5 +1,7 @@
 # Multi-arch Dockerfile for development tools
 # Build with: docker buildx build --platform linux/amd64,linux/arm64 -t dev-tools:latest .
+# Args: PYTHON_VERSION (overridable via --build-arg); node/python/maven versions are
+# baked in at generation time by install_dev_tools.sh generate_dockerfile
 
 FROM --platform=$BUILDPLATFORM ubuntu:22.04 AS base
 RUN apt-get update && apt-get install -y \
@@ -13,18 +15,20 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
-# Python 3.14.5 (build from source for latest version)
+# Python 3.15.0 (build from source for latest version)
 FROM base AS python
 ARG TARGETARCH
+# Default baked in at generation time; overridable: docker build --build-arg PYTHON_VERSION=x.y.z
+ARG PYTHON_VERSION=3.15.0
 RUN ARCH_NAME="${TARGETARCH:-$(uname -m)}" && \
     if [ "$ARCH_NAME" = "arm64" ] || [ "$ARCH_NAME" = "aarch64" ]; then ARCH_NAME="aarch64"; else ARCH_NAME="x86_64"; fi && \
     cd /tmp && \
-    curl -fsSL https://www.python.org/ftp/python/3.14.5/Python-3.14.5.tar.xz | tar -xJ && \
-    cd Python-3.14.5 && \
+    curl -fsSL https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTHON_VERSION}.tar.xz | tar -xJ && \
+    cd Python-${PYTHON_VERSION} && \
     ./configure --enable-optimizations --with-ensurepip=install --prefix=/usr/local && \
     make -j$(nproc) && \
     make install && \
-    cd /tmp && rm -rf Python-3.14.5
+    cd /tmp && rm -rf Python-${PYTHON_VERSION}
 RUN python3 --version
 
 # Java 17 (extract from tarball)
@@ -38,12 +42,13 @@ RUN JAVA_ARCH="${TARGETARCH:-$(uname -m)}" && \
 ENV JAVA_HOME=/opt/jdk-17.0.12
 ENV PATH=/usr/local/bin:$JAVA_HOME/bin:$PATH
 
-# Maven 3.9.16
+# Maven 3.10.0 (install to version-agnostic path, like Node.js)
 FROM base AS maven
 RUN mkdir -p /opt/maven && \
-    curl -fsSL https://dlcdn.apache.org/maven/maven-3/3.9.16/binaries/apache-maven-3.9.16-bin.tar.gz | tar -xz -C /opt/maven && \
-    ln -sf /opt/maven/apache-maven-3.9.16/bin/mvn /usr/local/bin/mvn
-ENV MAVEN_HOME=/opt/maven/apache-maven-3.9.16
+    curl -fsSL https://dlcdn.apache.org/maven/maven-3/3.10.0/binaries/apache-maven-3.10.0-bin.tar.gz | tar -xz -C /opt/maven && \
+    mv /opt/maven/apache-maven-3.10.0 /opt/maven/maven && \
+    ln -sf /opt/maven/maven/bin/mvn /usr/local/bin/mvn
+ENV MAVEN_HOME=/opt/maven/maven
 ENV PATH=/usr/local/bin:$MAVEN_HOME/bin:$PATH
 
 # Node.js 26.1.0 (install to version-agnostic path)
@@ -63,11 +68,11 @@ FROM base
 ARG TARGETARCH
 COPY --from=python /usr/local /usr/local
 COPY --from=java /opt/jdk-17.0.12 /opt/jdk-17.0.12
-COPY --from=maven /opt/maven/apache-maven-3.9.16 /opt/maven/apache-maven-3.9.16
+COPY --from=maven /opt/maven/maven /opt/maven/maven
 COPY --from=nodejs /opt/node /opt/node
 
 ENV JAVA_HOME=/opt/jdk-17.0.12
-ENV MAVEN_HOME=/opt/maven/apache-maven-3.9.16
+ENV MAVEN_HOME=/opt/maven/maven
 ENV PATH=/usr/local/bin:/opt/node/bin:$JAVA_HOME/bin:$MAVEN_HOME/bin:$PATH
 
 # Angular CLI (installed via npm)
