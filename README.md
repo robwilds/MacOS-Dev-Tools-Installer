@@ -100,8 +100,9 @@ Prompts for a custom image name (default `dev-tools`), shows an action plan, and
 - **9** - Node.js 26.1.0
 - **10** - Claude Code
 - **11** - AWS CLI v2
-- **12** - All tools (except Docker)
-- **13** - All tools (except Docker, with oMLX RC)
+- **12** - Splash (desktop app, Apple Silicon only)
+- **13** - All tools (except Docker)
+- **14** - All tools (except Docker, with oMLX RC)
 - **0** - Install all tools
 - **d** - Build and run Docker container (Python, Java, Maven, Node.js, AWS CLI)
 - **q** - Quit
@@ -134,6 +135,7 @@ The installer automatically checks if newer versions are available for each tool
 - **Maven**: Latest 3.x from the Apache CDN (`dlcdn.apache.org` listing, highest wins)
 - **Node.js**: Checks against latest version of the selected major line from nodejs.org
 - **oMLX**: Checks GitHub releases from jundot/omlx (supports stable and RC versions)
+- **Splash**: Latest release tag from the incoai/splash GitHub repo (desktop app DMG)
 - **OpenCode**: Uses hardcoded version
 - **Claude Code**: Checks npm registry
 - **Angular CLI**: Checks npm registry via `npm view @angular/cli version`
@@ -187,6 +189,20 @@ ls /Applications/oMLX.app
 **Note:** oMLX is a macOS application (not like Ollama which is a CLI). It manages LLM inference with tiered KV cache, continuous batching, and a built-in admin dashboard.
 
 This only prompts on **fresh install** — not on upgrades or if already installed.
+
+## Splash Installation (Local Only)
+
+```bash
+./install_dev_tools.sh "12"
+```
+
+Splash is a local inference engine for Apple silicon ([incoai/splash](https://github.com/incoai/splash)). The installer:
+
+1. Fetches the latest release tag from the incoai/splash GitHub repo
+2. Downloads the desktop app DMG (`Splash-X.Y.Z.dmg`) to ~/Downloads
+3. You open the DMG and drag Splash into Applications
+
+The installer checks the installed app version (`/Applications/Splash.app`, falling back to the Homebrew `splash` CLI) on each run and prompts to upgrade if a newer release is available. Splash requires Apple M3 or newer and macOS 26.4 or later — on other machines the installer prints a notice and skips.
 
 ## Prerequisites
 

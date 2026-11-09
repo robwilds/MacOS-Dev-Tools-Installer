@@ -163,6 +163,29 @@ check_nvm_version() {
     return 1
 }
 
+check_splash_version() {
+    # Splash desktop app: read CFBundleShortVersionString from /Applications/Splash.app
+    if [ -d "/Applications/Splash.app" ]; then
+        local version
+        version=$(defaults read "/Applications/Splash.app/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null)
+        if [ -n "$version" ]; then
+            echo "$version"
+            return 0
+        fi
+    fi
+    # Fall back to the Homebrew CLI if the app isn't installed
+    if command -v splash &>/dev/null; then
+        local version
+        version=$(splash --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        if [ -n "$version" ]; then
+            echo "$version"
+            return 0
+        fi
+    fi
+    echo ""
+    return 1
+}
+
 # --- Fetch Latest Version Functions ---
 fetch_latest_python_version() {
     local version
@@ -300,6 +323,29 @@ fetch_mlx_download_url() {
     if [ -n "$prefer" ]; then
         url=$(echo "$urls" | grep "$prefer" | head -1)
     fi
+    [ -z "$url" ] && url=$(echo "$urls" | head -1)
+    [ -n "$url" ] && echo "https://github.com${url}"
+}
+
+fetch_latest_splash_version() {
+    # Tags are plain X.Y.Z (no leading v); the releases page lists newest first.
+    local tags
+    tags=$(curl -s --compressed "https://github.com/incoai/splash/releases" 2>/dev/null | grep -oE '/incoai/splash/releases/tag/[^"#?]+' | sed 's|.*/tag/||' | awk '!seen[$0]++')
+    local version
+    version=$(echo "$tags" | grep -Ev '(rc|beta|alpha|dev|pre)[0-9]*($|-)' | head -1)
+    if [ -n "$version" ]; then
+        echo "$version"
+    else
+        echo "1.6.0"  # fallback to hardcoded version
+    fi
+}
+
+fetch_splash_download_url() {
+    local tag="$1"
+    local urls url=""
+    urls=$(curl -s --compressed "https://github.com/incoai/splash/releases/expanded_assets/${tag}" 2>/dev/null | grep -oE "href=\"/incoai/splash/releases/download/[^\"]+\.dmg\"" | sed 's/^href="//;s/"$//')
+    # Prefer the version-stamped DMG (Splash-X.Y.Z.dmg) over the bare "Splash.dmg" alias
+    url=$(echo "$urls" | grep -F "Splash-${tag}.dmg" | head -1)
     [ -z "$url" ] && url=$(echo "$urls" | head -1)
     [ -n "$url" ] && echo "https://github.com${url}"
 }
@@ -457,7 +503,7 @@ INSTALL_OMLX=false
 INSTALL_MLX=false
 INSTALL_MLX_RC=false
 INSTALL_DOCKER_DMG=false
-INSTALL_DOCKER_DMG=false
+INSTALL_SPLASH=false
 
 # Default Node.js version (used when non-interactive or when fetch fails)
 DEFAULT_NODE_VERSION="26.1.0"
@@ -757,6 +803,7 @@ parse_selection() {
         INSTALL_ANGULAR=true
         INSTALL_NVM=true
         INSTALL_AWS_CLI=true
+        INSTALL_SPLASH=true
         INSTALL_DOCKER_DMG=true
         return
     fi
@@ -775,8 +822,9 @@ parse_selection() {
                  9) INSTALL_NODE=true ;;
                  10) INSTALL_CLAUDE=true ;;
                  11) INSTALL_AWS_CLI=true ;;
-                 12) INSTALL_PYTHON=true; INSTALL_JAVA=true; INSTALL_MAVEN=true; INSTALL_MLX=true; INSTALL_OPENCODE=true; INSTALL_NODE=true; INSTALL_CLAUDE=true; INSTALL_ANGULAR=true; INSTALL_NVM=true; INSTALL_AWS_CLI=true; INSTALL_DOCKER_DMG=false ;;
-                 13) INSTALL_PYTHON=true; INSTALL_JAVA=true; INSTALL_MAVEN=true; INSTALL_MLX=true; INSTALL_MLX_RC=true; INSTALL_OPENCODE=true; INSTALL_NODE=true; INSTALL_CLAUDE=true; INSTALL_ANGULAR=true; INSTALL_NVM=true; INSTALL_AWS_CLI=true; INSTALL_DOCKER_DMG=false ;;
+                 12) INSTALL_SPLASH=true ;;
+                 13) INSTALL_PYTHON=true; INSTALL_JAVA=true; INSTALL_MAVEN=true; INSTALL_MLX=true; INSTALL_SPLASH=true; INSTALL_OPENCODE=true; INSTALL_NODE=true; INSTALL_CLAUDE=true; INSTALL_ANGULAR=true; INSTALL_NVM=true; INSTALL_AWS_CLI=true; INSTALL_DOCKER_DMG=false ;;
+                 14) INSTALL_PYTHON=true; INSTALL_JAVA=true; INSTALL_MAVEN=true; INSTALL_MLX=true; INSTALL_MLX_RC=true; INSTALL_SPLASH=true; INSTALL_OPENCODE=true; INSTALL_NODE=true; INSTALL_CLAUDE=true; INSTALL_ANGULAR=true; INSTALL_NVM=true; INSTALL_AWS_CLI=true; INSTALL_DOCKER_DMG=false ;;
            esac
     done
 
@@ -804,8 +852,9 @@ show_menu() {
     echo "   9.   Node.js $NODE_VERSION"
     echo "   10.  Claude Code"
     echo "   11.  AWS CLI v2"
-    echo "   12.  All tools (except Docker)"
-    echo "   13.  All tools (except Docker, with oMLX RC)"
+    echo "   12.  Splash (desktop app)"
+    echo "   13.  All tools (except Docker)"
+    echo "   14.  All tools (except Docker, with oMLX RC)"
     echo ""
     echo "   d.   Build and run Docker container"
     echo ""
@@ -1038,6 +1087,43 @@ if [ "$INSTALL_MLX" = true ]; then
     fi
 fi
 
+# 4b. INSTALL SPLASH (desktop app, Apple Silicon only)
+if [ "$INSTALL_SPLASH" = true ]; then
+    SPLASH_INSTALLED=$(check_splash_version)
+    SPLASH_LATEST=$(fetch_latest_splash_version)
+    if should_upgrade "Splash" "$SPLASH_INSTALLED" "$SPLASH_LATEST"; then
+        echo -e "${GREEN}Installing Splash (desktop app)...${NC}"
+        if [ -n "$SPLASH_INSTALLED" ]; then
+            echo -e "${YELLOW}Current version: $SPLASH_INSTALLED${NC}"
+        fi
+        if [ "$(uname -m)" = "arm64" ]; then
+            DOWNLOAD_DIR="$HOME/Downloads"
+            LATEST_TAG="$SPLASH_LATEST"
+            # Prefer the version-stamped DMG; fall back to the known naming scheme
+            DOWNLOAD_URL=$(fetch_splash_download_url "$LATEST_TAG")
+            if [ -z "$DOWNLOAD_URL" ]; then
+                DOWNLOAD_URL="https://github.com/incoai/splash/releases/download/${LATEST_TAG}/Splash-${LATEST_TAG}.dmg"
+            fi
+            REMOTE_FILE=$(basename "$DOWNLOAD_URL")
+            echo -e "${GREEN}Downloading Splash ${LATEST_TAG} DMG to $DOWNLOAD_DIR/${REMOTE_FILE}...${NC}"
+            curl_response=$(curl --connect-timeout 10 --max-time 600 -fSL -o "$DOWNLOAD_DIR/$REMOTE_FILE" "$DOWNLOAD_URL" 2>&1)
+            if [ $? -ne 0 ]; then
+                echo -e "${RED}Error downloading Splash DMG:${NC}"
+                echo -e "${RED}  $curl_response${NC}"
+                echo -e "${YELLOW}  Check your internet connection and try again.${NC}"
+                exit 1
+            fi
+            echo -e "${GREEN}Splash DMG downloaded to $DOWNLOAD_DIR/${REMOTE_FILE}${NC}"
+            echo -e "${YELLOW}Please open $DOWNLOAD_DIR/${REMOTE_FILE} and drag Splash to your Applications folder.${NC}"
+            echo -e "${BLUE}Requires Apple M3 or newer and macOS 26.4 or later.${NC}"
+        else
+            echo -e "${YELLOW}Splash requires Apple silicon (M3 or newer) -- skipping on this machine.${NC}"
+        fi
+    else
+        echo -e "${YELLOW}Splash already at latest version ($SPLASH_INSTALLED), skipping...${NC}"
+    fi
+fi
+
 # 5. INSTALL OPENCODE (Requested Command)
 if [ "$INSTALL_OPENCODE" = true ]; then
     OPENCODE_INSTALLED=$(check_opencode_version)
@@ -1148,7 +1234,13 @@ if [ "$INSTALL_DOCKER_DMG" = true ]; then
 fi
 
 # --- PATH CONFIGURATION ---
-echo -e "${BLUE}Configuring ZSH path...${NC}"
+# Guarded by the "# dev_tools_config" sentinel: only appends on the first run.
+# Only announce it when something will actually be written.
+if grep -q "# dev_tools_config" ~/.zshrc; then
+    echo -e "${BLUE}ZSH path already configured (sentinel present) -- skipping.${NC}"
+else
+    echo -e "${BLUE}Configuring ZSH path...${NC}"
+fi
 # Use the dynamic JDK folder name for the JAVA_HOME export (only if Java was installed)
 if [ "$INSTALL_JAVA" = true ]; then
     JDK_PATH="/Library/Java/JavaVirtualMachines/$JDK_FOLDER/Contents/Home"
